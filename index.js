@@ -18,7 +18,7 @@ const MENU_RESPONSES = {
   '3': `KOOP Market est une plateforme qui partage des opportunités pour vous aider dans votre recherche. Nous n'engageons pas directement, mais nous centralisons les meilleures offres vérifiées pour vous. Pour voir les offres disponibles, rejoignez notre chaîne WhatsApp (Option 1) ou visitez : https://koop-market.com/#/jobs`,
   '4': `Découvrez nos formations et certifications : https://koop-market.com/#/services/training`,
   '5': `Accédez à la boutique KOOP pour voir nos articles et services : https://koop-market.com/#/koop`,
-  '6': `Votre message sera transmis à un conseiller KOOP Market. Veuillez décrire votre demande ci-dessous ou écrivez directement à : coop@amino.com`,
+  '6': `Votre message sera transmis à un conseiller KOOP Market. Veuillez décrire votre demande ci-dessous ou écrivez directement à � : contact@koop-market.com`,
 };
 
 // Track users who selected option 6 and are expected to send a free-form message
@@ -28,7 +28,8 @@ const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'koop-market-bot' }),
   puppeteer: {
     headless: true,
-    args: [
+    args:
+    [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
