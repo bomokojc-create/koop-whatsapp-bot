@@ -1,5 +1,6 @@
 'use strict';
 
+const http = require('http');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
@@ -18,7 +19,7 @@ const MENU_RESPONSES = {
   '3': `KOOP Market est une plateforme qui partage des opportunités pour vous aider dans votre recherche. Nous n'engageons pas directement, mais nous centralisons les meilleures offres vérifiées pour vous. Pour voir les offres disponibles, rejoignez notre chaîne WhatsApp (Option 1) ou visitez : https://koop-market.com/#/jobs`,
   '4': `Découvrez nos formations et certifications : https://koop-market.com/#/services/training`,
   '5': `Accédez à la boutique KOOP pour voir nos articles et services : https://koop-market.com/#/koop`,
-  '6': `Votre message sera transmis à un conseiller KOOP Market. Veuillez décrire votre demande ci-dessous ou écrivez directement à � : contact@koop-market.com`,
+  '6': `Votre message sera transmis à un conseiller KOOP Market. Veuillez décrire votre demande ci-dessous ou écrivez directement à 📧 : contact@koop-market.com`,
 };
 
 // Track users who selected option 6 and are expected to send a free-form message
@@ -27,6 +28,7 @@ const awaitingMessage = new Set();
 const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'koop-market-bot' }),
   puppeteer: {
+    executablePath: '/usr/bin/chromium',
     headless: true,
     args:
     [
@@ -92,3 +94,12 @@ client.on('message', async (message) => {
 });
 
 client.initialize();
+
+// Keep-alive HTTP server so Railway health checks pass and the process stays alive
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('OK');
+}).listen(PORT, () => {
+  console.log(`[KOOP Bot] Health-check server listening on port ${PORT}`);
+});
