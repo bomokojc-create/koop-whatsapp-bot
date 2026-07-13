@@ -1,9 +1,75 @@
 'use strict';
 
+const fs   = require('fs');
 const http = require('http');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GLOBAL ERROR GUARDS — catch anything that would otherwise crash the process
+// silently and leave Railway reporting "Crashed" with no useful log entry.
+// ─────────────────────────────────────────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[KOOP Bot] UNCAUGHT EXCEPTION — process will restart:', err);
+  // Give Railway/the logger a moment to flush, then exit so the platform
+  // can restart the container (better than hanging in a broken state).
+  setTimeout(() => process.exit(1), 500);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[KOOP Bot] UNHANDLED PROMISE REJECTION:', reason);
+  // We intentionally keep the process alive here; a single rejected promise
+  // (e.g. a failed message.reply) should not crash the whole bot.
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HEALTH-CHECK HTTP SERVER — started FIRST so Railway's port check passes
+// immediately, even while Puppeteer/Chromium is still warming up.
+// ─────────────────────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('OK');
+}).listen(PORT, () => {
+  console.log(`[KOOP Bot] Health-check server listening on port ${PORT}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHROMIUM BINARY DISCOVERY — try several well-known paths in priority order.
+// ─────────────────────────────────────────────────────────────────────────────
+function resolveChromiumPath() {
+  const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        console.log(`[KOOP Bot] Chromium found at: ${candidate}`);
+        return candidate;
+      }
+    } catch (_) {
+      // existsSync shouldn't throw, but be safe
+    }
+  }
+
+  console.error(
+    '[KOOP Bot] WARNING: No Chromium binary found at any known path. ' +
+    'Tried: ' + candidates.join(', ') + '. ' +
+    'Falling back to Puppeteer default (may fail).'
+  );
+  return undefined;
+}
+
+const executablePath = resolveChromiumPath();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOT CONTENT
+// ─────────────────────────────────────────────────────────────────────────────
 const MAIN_MENU = `Bonjour ! Bienvenue chez KOOP Market. Comment pouvons-nous vous aider aujourd'hui ?
 
 1. 📢 Chaîne WhatsApp : Rejoindre notre communauté
@@ -25,22 +91,30 @@ const MENU_RESPONSES = {
 // Track users who selected option 6 and are expected to send a free-form message
 const awaitingMessage = new Set();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WHATSAPP CLIENT
+// ─────────────────────────────────────────────────────────────────────────────
+const puppeteerConfig = {
+  headless: true,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-gpu',
+  ],
+};
+
+if (executablePath) {
+  puppeteerConfig.executablePath = executablePath;
+}
+
 const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'koop-market-bot' }),
-  puppeteer: {
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-gpu',
-    ],
-  },
+  puppeteer: puppeteerConfig,
 });
 
 client.on('qr', (qr) => {
@@ -53,13 +127,14 @@ client.on('ready', () => {
 });
 
 client.on('auth_failure', (msg) => {
-  console.error('[KOOP Bot] Authentication failure:', msg);
-  process.exit(1);
+  console.error('[KOOP Bot] Authentication failure — check session or re-scan QR:', msg);
+  // Give the logger time to flush before exiting
+  setTimeout(() => process.exit(1), 500);
 });
 
 client.on('disconnected', (reason) => {
-  console.warn('[KOOP Bot] Client was disconnected:', reason);
-  process.exit(1);
+  console.warn('[KOOP Bot] Client disconnected (reason: ' + reason + '). Restarting process...');
+  setTimeout(() => process.exit(1), 500);
 });
 
 client.on('message', async (message) => {
@@ -67,7 +142,7 @@ client.on('message', async (message) => {
   if (message.isGroupMsg) return;
 
   const sender = message.from;
-  const body = (message.body || '').trim();
+  const body   = (message.body || '').trim();
 
   // Option 6 flow: user previously selected "Message particulier" — capture their free-form message
   if (awaitingMessage.has(sender)) {
@@ -81,7 +156,6 @@ client.on('message', async (message) => {
   // Known menu option selected
   if (MENU_RESPONSES[body]) {
     await message.reply(MENU_RESPONSES[body]);
-    // After delivering option-6 prompt, flag this sender as awaiting their detailed message
     if (body === '6') {
       awaitingMessage.add(sender);
     }
@@ -92,19 +166,11 @@ client.on('message', async (message) => {
   await message.reply(MAIN_MENU);
 });
 
-// Wrap initialize in try-catch to log startup errors instead of crashing silently
-try {
-  client.initialize();
-} catch (err) {
-  console.error('[KOOP Bot] Failed to initialize client:', err);
-  process.exit(1);
-}
-
-// Keep-alive HTTP server so Railway health checks pass and the process stays alive
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('OK');
-}).listen(PORT, () => {
-  console.log(`[KOOP Bot] Health-check server listening on port ${PORT}`);
+// ─────────────────────────────────────────────────────────────────────────────
+// BOOT SEQUENCE — initialize the WhatsApp client (after the HTTP server)
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('[KOOP Bot] Initializing WhatsApp client...');
+client.initialize().catch((err) => {
+  console.error('[KOOP Bot] client.initialize() threw an error:', err);
+  setTimeout(() => process.exit(1), 500);
 });
