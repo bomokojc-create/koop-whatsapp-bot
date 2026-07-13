@@ -8,7 +8,7 @@ const qrcode = require('qrcode-terminal');
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL ERROR GUARDS — catch anything that would otherwise crash the process
 // silently and leave Railway reporting "Crashed" with no useful log entry.
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 process.on('uncaughtException', (err) => {
   console.error('[KOOP Bot] UNCAUGHT EXCEPTION — process will restart:', err);
   // Give Railway/the logger a moment to flush, then exit so the platform
@@ -22,7 +22,7 @@ process.on('unhandledRejection', (reason) => {
   // (e.g. a failed message.reply) should not crash the whole bot.
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 // HEALTH-CHECK HTTP SERVER — started FIRST so Railway's port check passes
 // immediately, even while Puppeteer/Chromium is still warming up.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,17 +67,17 @@ function resolveChromiumPath() {
 
 const executablePath = resolveChromiumPath();
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 // BOT CONTENT
-// ─────────────────────────────────────────────────────────────────────────────
-const MAIN_MENU = `Bonjour ! Bienvenue chez KOOP Market. Comment pouvons-nous vous aider aujourd'hui ?
+// ──────────────────────────────────────────────────────────────────────────────
+const MAIN_MENU = `Veuillez choisir une option en tapant le numéro correspondant :
 
 1. 📢 Chaîne WhatsApp : Rejoindre notre communauté
 2. ℹ️ Infos : En savoir plus sur KOOP Market
 3. 💼 Emploi : Besoin d'un travail ?
 4. 🎓 Formation : Découvrir nos programmes
 5. 🛒 Boutique : Accéder à la boutique KOOP
-6. ✉️ Message particulier : Parler à un conseiller`;
+6. ✉️ Message particulier : Nous contacter par e-mail`;
 
 const MENU_RESPONSES = {
   '1': `Cliquez ici pour rejoindre la chaîne WhatsApp KOOP Market : https://whatsapp.com/channel/0029Vb7vn4J8fewxV924lW1p`,
@@ -85,13 +85,13 @@ const MENU_RESPONSES = {
   '3': `KOOP Market est une plateforme qui partage des opportunités pour vous aider dans votre recherche. Nous n'engageons pas directement, mais nous centralisons les meilleures offres vérifiées pour vous. Pour voir les offres disponibles, rejoignez notre chaîne WhatsApp (Option 1) ou visitez : https://koop-market.com/#/jobs`,
   '4': `Découvrez nos formations et certifications : https://koop-market.com/#/services/training`,
   '5': `Accédez à la boutique KOOP pour voir nos articles et services : https://koop-market.com/#/koop`,
-  '6': `Votre message sera transmis à un conseiller KOOP Market. Veuillez décrire votre demande ci-dessous ou écrivez directement à 📧 : contact@koop-market.com`,
+  '6': `Pour toute demande particulière, veuillez nous écrire directement à l'adresse suivante : contact@koop-market.com`,
 };
 
 // Track users who selected option 6 and are expected to send a free-form message
 const awaitingMessage = new Set();
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 // WHATSAPP CLIENT
 // ─────────────────────────────────────────────────────────────────────────────
 const puppeteerConfig = {
@@ -148,7 +148,7 @@ client.on('message', async (message) => {
   if (awaitingMessage.has(sender)) {
     awaitingMessage.delete(sender);
     await message.reply(
-      'Merci pour votre message ! Un conseiller KOOP Market vous contactera très bientôt. 🙏\n\n' + MAIN_MENU
+      'Merci ! Pour toute demande, écrivez-nous directement à : contact@koop-market.com\n\n' + MAIN_MENU
     );
     return;
   }
@@ -168,7 +168,7 @@ client.on('message', async (message) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOOT SEQUENCE — initialize the WhatsApp client (after the HTTP server)
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 console.log('[KOOP Bot] Initializing WhatsApp client...');
 client.initialize().catch((err) => {
   console.error('[KOOP Bot] client.initialize() threw an error:', err);
