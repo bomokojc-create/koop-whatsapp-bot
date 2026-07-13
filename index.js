@@ -28,10 +28,9 @@ const awaitingMessage = new Set();
 const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'koop-market-bot' }),
   puppeteer: {
-    executablePath: '/usr/bin/chromium',
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
     headless: true,
-    args:
-    [
+    args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
@@ -93,7 +92,13 @@ client.on('message', async (message) => {
   await message.reply(MAIN_MENU);
 });
 
-client.initialize();
+// Wrap initialize in try-catch to log startup errors instead of crashing silently
+try {
+  client.initialize();
+} catch (err) {
+  console.error('[KOOP Bot] Failed to initialize client:', err);
+  process.exit(1);
+}
 
 // Keep-alive HTTP server so Railway health checks pass and the process stays alive
 const PORT = process.env.PORT || 3000;
