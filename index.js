@@ -26,86 +26,166 @@ process.on('unhandledRejection', (reason) => {
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('OK');
+  res.end('OK — KOOP Bot v11 running');
 }).listen(PORT, () => {
   console.log(`[KOOP Bot] Health-check server listening on port ${PORT}`);
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
-// CHROMIUM BINARY DISCOVERY — uses `which` to find the binary wherever
-// Railway/Nixpacks installed it (path varies between builds).
+// LD_LIBRARY_PATH FIX — Dynamically find all /nix/store lib directories
+// and inject them so Chromium can locate its shared libraries (libglib, etc.).
+// This runs BEFORE Chromium is launched.
 // ════════════════════════════════════════════════════════════════════════════════
-function resolveChromiumPath() {
-  console.log('[KOOP Bot] Starting Chromium binary discovery...');
+function fixLibraryPath() {
+  console.log('[KOOP Bot] [LD_FIX] Scanning /nix/store for shared library directories...');
+  const startTime = Date.now();
 
-  // 1. Check env var override first
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    console.log('[KOOP Bot] PUPPETEER_EXECUTABLE_PATH env var set: ' + envPath);
-    if (fs.existsSync(envPath)) {
-      console.log('[KOOP Bot] ✓ Env var path exists and will be used.');
-      return envPath;
+  try {
+    // Find all 'lib' directories in /nix/store that contain .so files
+    const cmd = `find /nix/store -maxdepth 3 -type d -name "lib" 2>/dev/null | head -n 200`;
+    const result = execSync(cmd, { timeout: 30000 }).toString().trim();
+
+    if (result) {
+      const libDirs = result.split('\n').filter(d => d.length > 0);
+      const currentLdPath = process.env.LD_LIBRARY_PATH || '';
+      const newLdPath = libDirs.join(':') + (currentLdPath ? ':' + currentLdPath : '');
+      process.env.LD_LIBRARY_PATH = newLdPath;
+      console.log(`[KOOP Bot] [LD_FIX] Found ${libDirs.length} lib directories in ${Date.now() - startTime}ms`);
+      console.log(`[KOOP Bot] [LD_FIX] LD_LIBRARY_PATH set (first 3 entries): ${libDirs.slice(0, 3).join(', ')}...`);
+    } else {
+      console.log('[KOOP Bot] [LD_FIX] No lib directories found in /nix/store');
     }
-    console.log('[KOOP Bot] ✗ Env var path does NOT exist on disk, continuing search...');
+  } catch (err) {
+    console.error('[KOOP Bot] [LD_FIX] Error scanning for libraries:', err.message);
   }
 
-  // 2. System search using `which` — this finds the binary wherever Nixpacks put it
+  // Also try a more targeted approach: find directories containing libglib specifically
+  try {
+    const glibCmd = `find /nix/store -name "libglib-2.0.so*" -type f 2>/dev/null | head -n 5`;
+    const glibResult = execSync(glibCmd, { timeout: 15000 }).toString().trim();
+    if (glibResult) {
+      const glibDirs = glibResult.split('\n').map(f => f.substring(0, f.lastIndexOf('/')));
+      const currentLdPath = process.env.LD_LIBRARY_PATH || '';
+      for (const dir of glibDirs) {
+        if (!currentLdPath.includes(dir)) {
+          process.env.LD_LIBRARY_PATH = dir + ':' + process.env.LD_LIBRARY_PATH;
+        }
+      }
+      console.log(`[KOOP Bot] [LD_FIX] Found libglib in: ${glibDirs.join(', ')}`);
+    }
+  } catch (err) {
+    console.log('[KOOP Bot] [LD_FIX] libglib targeted search skipped:', err.message);
+  }
+
+  console.log(`[KOOP Bot] [LD_FIX] Library path fix completed in ${Date.now() - startTime}ms`);
+}
+
+// Execute library path fix immediately
+fixLibraryPath();
+
+// ════════════════════════════════════════════════════════════════════════════════
+// CHROMIUM BINARY DISCOVERY — Extremely aggressive, infallible search.
+// Uses multiple strategies to guarantee finding the Chromium binary.
+// ════════════════════════════════════════════════════════════════════════════════
+function resolveChromiumPath() {
+  console.log('[KOOP Bot] [CHROMIUM] Starting aggressive binary discovery...');
+  const startTime = Date.now();
+
+  // ─── Strategy 1: Environment variable override ───
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    console.log(`[KOOP Bot] [CHROMIUM] Strategy 1 — Env var PUPPETEER_EXECUTABLE_PATH: ${envPath}`);
+    if (fs.existsSync(envPath)) {
+      console.log('[KOOP Bot] [CHROMIUM] ✓ Env var path exists. Using it.');
+      return envPath;
+    }
+    console.log('[KOOP Bot] [CHROMIUM] ✗ Env var path does NOT exist on disk.');
+  } else {
+    console.log('[KOOP Bot] [CHROMIUM] Strategy 1 — No PUPPETEER_EXECUTABLE_PATH set.');
+  }
+
+  // ─── Strategy 2: `which` lookup (fastest) ───
   const binaries = ['chromium', 'google-chrome', 'chromium-browser', 'google-chrome-stable'];
+  console.log('[KOOP Bot] [CHROMIUM] Strategy 2 — Checking PATH with `which`...');
 
   for (const bin of binaries) {
     try {
-      const foundPath = execSync(`which ${bin}`).toString().trim();
+      const foundPath = execSync(`which ${bin} 2>/dev/null`).toString().trim();
       if (foundPath && fs.existsSync(foundPath)) {
-        console.log(`[KOOP Bot] System search for ${bin}: ${foundPath}`);
-        console.log('[KOOP Bot] ✓ Binary found and verified. Using: ' + foundPath);
+        // Resolve symlinks to get the real binary
+        const realPath = fs.realpathSync(foundPath);
+        console.log(`[KOOP Bot] [CHROMIUM] ✓ Found '${bin}' via which: ${foundPath}`);
+        console.log(`[KOOP Bot] [CHROMIUM]   Real path (resolved symlinks): ${realPath}`);
+        console.log(`[KOOP Bot] [CHROMIUM]   Discovery took ${Date.now() - startTime}ms`);
         return foundPath;
       }
     } catch (_) {
-      console.log(`[KOOP Bot] System search for ${bin}: not found in PATH`);
+      // `which` returns exit code 1 if not found
+    }
+  }
+  console.log('[KOOP Bot] [CHROMIUM] ✗ No binary found in PATH.');
+
+  // ─── Strategy 3: Infallible /nix/store deep search ───
+  // This is the nuclear option. It WILL find Chromium if it's installed anywhere in /nix/store.
+  console.log('[KOOP Bot] [CHROMIUM] Strategy 3 — Deep scanning /nix/store (may take 10-15s)...');
+
+  const searchPatterns = [
+    // Look for chromium wrapper scripts first (these handle LD_LIBRARY_PATH internally)
+    `find /nix/store -path "*/bin/chromium" -type f 2>/dev/null | head -n 1`,
+    `find /nix/store -path "*/bin/google-chrome" -type f 2>/dev/null | head -n 1`,
+    `find /nix/store -path "*/bin/chromium-browser" -type f 2>/dev/null | head -n 1`,
+    // Look for any executable named chromium
+    `find /nix/store -name "chromium" -type f -executable 2>/dev/null | head -n 1`,
+    // Look for the .chromium-wrapped binary (Nix wrapper pattern)
+    `find /nix/store -name ".chromium-wrapped" -type f -executable 2>/dev/null | head -n 1`,
+    // Broader search for chrome binaries
+    `find /nix/store -name "chrome" -type f -executable 2>/dev/null | head -n 1`,
+  ];
+
+  for (const cmd of searchPatterns) {
+    try {
+      const result = execSync(cmd, { timeout: 30000 }).toString().trim();
+      if (result && fs.existsSync(result)) {
+        console.log(`[KOOP Bot] [CHROMIUM] ✓ Deep search found: ${result}`);
+        console.log(`[KOOP Bot] [CHROMIUM]   Command: ${cmd}`);
+        console.log(`[KOOP Bot] [CHROMIUM]   Discovery took ${Date.now() - startTime}ms`);
+        return result;
+      }
+    } catch (err) {
+      console.log(`[KOOP Bot] [CHROMIUM]   Pattern timed out or failed: ${cmd.substring(0, 60)}...`);
     }
   }
 
-  // 3. Fallback: probe well-known hardcoded paths
+  // ─── Strategy 4: Check known hardcoded paths ───
+  console.log('[KOOP Bot] [CHROMIUM] Strategy 4 — Checking hardcoded fallback paths...');
   const fallbackPaths = [
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
-    '/nix/store/chromium',
+    '/snap/bin/chromium',
   ];
 
   for (const candidate of fallbackPaths) {
-    try {
-      if (fs.existsSync(candidate)) {
-        console.log('[KOOP Bot] ✓ Fallback path found: ' + candidate);
-        return candidate;
-      }
-    } catch (_) { /* skip */ }
+    if (fs.existsSync(candidate)) {
+      console.log(`[KOOP Bot] [CHROMIUM] ✓ Fallback path exists: ${candidate}`);
+      return candidate;
+    }
   }
 
-  // 4. Last resort: search /nix/store for any chromium binary
-  try {
-    const nixSearch = execSync('find /nix/store -name "chromium" -type f -executable 2>/dev/null | head -1').toString().trim();
-    if (nixSearch) {
-      console.log('[KOOP Bot] ✓ Nix store search found: ' + nixSearch);
-      return nixSearch;
-    }
-  } catch (_) {
-    console.log('[KOOP Bot] Nix store search failed or returned empty.');
-  }
+  // ─── Strategy 5: Let Puppeteer use its own bundled Chromium ───
+  console.log('[KOOP Bot] [CHROMIUM] ✗ ALL STRATEGIES EXHAUSTED. No Chromium found.');
+  console.log('[KOOP Bot] [CHROMIUM] Puppeteer will use its bundled Chromium (may fail without libs).');
+  console.log(`[KOOP Bot] [CHROMIUM] Total search time: ${Date.now() - startTime}ms`);
 
+  // Log system info for debugging
   try {
-    const nixSearch2 = execSync('find /nix/store -name "google-chrome" -type f -executable 2>/dev/null | head -1').toString().trim();
-    if (nixSearch2) {
-      console.log('[KOOP Bot] ✓ Nix store search found google-chrome: ' + nixSearch2);
-      return nixSearch2;
-    }
-  } catch (_) { /* skip */ }
+    const pathEnv = process.env.PATH || '';
+    console.log(`[KOOP Bot] [DEBUG] PATH: ${pathEnv}`);
+    const lsNix = execSync('ls /nix/store/ 2>/dev/null | head -n 20').toString();
+    console.log(`[KOOP Bot] [DEBUG] /nix/store (first 20): ${lsNix}`);
+  } catch (_) { /* ignore */ }
 
-  console.error(
-    '[KOOP Bot] ✗ CRITICAL: No Chromium binary found anywhere. ' +
-    'Puppeteer will attempt its default (bundled) path — this may fail on Railway.'
-  );
   return undefined;
 }
 
@@ -133,7 +213,7 @@ const MENU_RESPONSES = {
   '6': `Pour toute demande particulière, veuillez nous écrire directement à l'adresse suivante : contact@koop-market.com`,
 };
 
-// ——— Concluding / Politeness Keywords ————————————————————————————————————————————————
+// ——— Concluding / Politeness Keywords ————————————————————————————————————————
 const CONCLUDING_KEYWORDS = [
   'merci', 'thanks', 'thank you', 'ok', 'okay',
   "d'accord", 'daccord', 'bien reçu', 'reçu', 'received'

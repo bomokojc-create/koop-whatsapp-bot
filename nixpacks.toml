@@ -1,2 +1,12 @@
 [phases.setup]
-nixPkgs = ['nodejs_20', 'chromium', 'glib', 'nss', 'nspr', 'atk', 'at-spi2-atk', 'libdrm', 'expat', 'libxcb', 'libxshmfence', 'libX11', 'libXcomposite', 'libXdamage', 'libXext', 'libXfixes', 'libXrandr', 'libgbm', 'pango', 'cairo', 'alsa-lib', 'cups', 'dbus', 'mesa']
+nixPkgs = ['nodejs_20', 'chromium', 'glib', 'nss', 'nspr', 'atk', 'at-spi2-atk', 'libdrm', 'expat', 'libxcb', 'libxshmfence', 'libX11', 'libXcomposite', 'libXdamage', 'libXext', 'libXfixes', 'libXrandr', 'libgbm', 'pango', 'cairo', 'alsa-lib', 'cups', 'dbus', 'mesa', 'gtk3', 'xorg.libXi', 'xorg.libXcursor', 'xorg.libXrender', 'fontconfig', 'freetype']
+
+[phases.install]
+cmds = ['npm ci || npm install']
+
+[start]
+cmd = 'node index.js'
+
+[variables]
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true'
+FONTCONFIG_PATH = '/etc/fonts'
