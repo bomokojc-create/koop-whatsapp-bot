@@ -6,10 +6,10 @@ const { execSync } = require('child_process');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // GLOBAL ERROR GUARDS — catch anything that would otherwise crash the process
 // silently and leave Railway reporting "Crashed" with no useful log entry.
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 process.on('uncaughtException', (err) => {
   console.error('[KOOP Bot] UNCAUGHT EXCEPTION — process will restart:', err);
   setTimeout(() => process.exit(1), 500);
@@ -19,23 +19,23 @@ process.on('unhandledRejection', (reason) => {
   console.error('[KOOP Bot] UNHANDLED PROMISE REJECTION:', reason);
 });
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // HEALTH-CHECK HTTP SERVER — started FIRST so Railway's port check passes
 // immediately, even while Puppeteer/Chromium is still warming up.
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('OK — KOOP Bot v11 running');
+  res.end('OK 🌐 KOOP Bot v11 running');
 }).listen(PORT, () => {
   console.log(`[KOOP Bot] Health-check server listening on port ${PORT}`);
 });
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // LD_LIBRARY_PATH FIX — Dynamically find all /nix/store lib directories
 // and inject them so Chromium can locate its shared libraries (libglib, etc.).
 // This runs BEFORE Chromium is launched.
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 function fixLibraryPath() {
   console.log('[KOOP Bot] [LD_FIX] Scanning /nix/store for shared library directories...');
   const startTime = Date.now();
@@ -83,10 +83,10 @@ function fixLibraryPath() {
 // Execute library path fix immediately
 fixLibraryPath();
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // CHROMIUM BINARY DISCOVERY — Extremely aggressive, infallible search.
 // Uses multiple strategies to guarantee finding the Chromium binary.
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 function resolveChromiumPath() {
   console.log('[KOOP Bot] [CHROMIUM] Starting aggressive binary discovery...');
   const startTime = Date.now();
@@ -192,9 +192,9 @@ function resolveChromiumPath() {
 const executablePath = resolveChromiumPath();
 console.log('[KOOP Bot] Final Chromium executablePath: ' + (executablePath || 'NONE (using Puppeteer default)'));
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // BOT CONTENT
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 const MAIN_MENU = `Veuillez choisir une option en tapant le numéro correspondant :
 
 1. 📢 Chaîne WhatsApp : Rejoindre notre communauté
@@ -215,8 +215,8 @@ const MENU_RESPONSES = {
 
 // ——— Concluding / Politeness Keywords ————————————————————————————————————————
 const CONCLUDING_KEYWORDS = [
-  'merci', 'thanks', 'thank you', 'ok', 'okay',
-  "d'accord", 'daccord', 'bien reçu', 'reçu', 'received'
+  'merci', 'merci beaucoup', 'thanks', 'thank you', 'ok', 'okay',
+  "d'accord", 'daccord', 'bien reçu', 'reçu', 'received', 'dkr'
 ];
 
 const POLITE_EXIT_REPLY = 'Je vous en prie ! KOOP Market reste à votre disposition.';
@@ -229,9 +229,9 @@ function isConcludingMessage(text) {
 // Track users who selected option 6 and are expected to send a free-form message
 const awaitingMessage = new Set();
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // WHATSAPP CLIENT
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 const puppeteerConfig = {
   headless: true,
   args: [
@@ -309,9 +309,9 @@ client.on('message', async (message) => {
   await message.reply(MAIN_MENU);
 });
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // BOOT SEQUENCE — initialize the WhatsApp client (after the HTTP server)
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 console.log('[KOOP Bot] Initializing WhatsApp client...');
 client.initialize().catch((err) => {
   console.error('[KOOP Bot] client.initialize() threw an error:', err);
