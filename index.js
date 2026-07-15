@@ -8,21 +8,17 @@ const qrcode = require('qrcode-terminal');
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL ERROR GUARDS — catch anything that would otherwise crash the process
 // silently and leave Railway reporting "Crashed" with no useful log entry.
-// ──────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 process.on('uncaughtException', (err) => {
   console.error('[KOOP Bot] UNCAUGHT EXCEPTION — process will restart:', err);
-  // Give Railway/the logger a moment to flush, then exit so the platform
-  // can restart the container (better than hanging in a broken state).
   setTimeout(() => process.exit(1), 500);
 });
 
 process.on('unhandledRejection', (reason) => {
   console.error('[KOOP Bot] UNHANDLED PROMISE REJECTION:', reason);
-  // We intentionally keep the process alive here; a single rejected promise
-  // (e.g. a failed message.reply) should not crash the whole bot.
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // HEALTH-CHECK HTTP SERVER — started FIRST so Railway's port check passes
 // immediately, even while Puppeteer/Chromium is still warming up.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,7 +35,7 @@ http.createServer((req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 function resolveChromiumPath() {
   const candidates = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.PUPPETEERE_EXECUTABLE_PATH,
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
@@ -67,9 +63,9 @@ function resolveChromiumPath() {
 
 const executablePath = resolveChromiumPath();
 
-// ──────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // BOT CONTENT
-// ──────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 const MAIN_MENU = `Veuillez choisir une option en tapant le numéro correspondant :
 
 1. 📢 Chaîne WhatsApp : Rejoindre notre communauté
@@ -88,10 +84,23 @@ const MENU_RESPONSES = {
   '6': `Pour toute demande particulière, veuillez nous écrire directement à l'adresse suivante : contact@koop-market.com`,
 };
 
+// ─── Concluding / Politeness Keywords ───────────────────────────────────────────────
+const CONCLUDING_KEYWORDS = [
+  'merci', 'thanks', 'thank you', 'ok', 'okay',
+  "d'accord", 'daccord', 'bien reçu', 'reçu', 'received'
+];
+
+const POLITE_EXIT_REPLY = 'Je vous en prie ! KOOP Market reste à votre disposition.';
+
+function isConcludingMessage(text) {
+  const normalized = text.trim().toLowerCase();
+  return CONCLUDING_KEYWORDS.some(kw => normalized === kw);
+}
+
 // Track users who selected option 6 and are expected to send a free-form message
 const awaitingMessage = new Set();
 
-// ──────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // WHATSAPP CLIENT
 // ─────────────────────────────────────────────────────────────────────────────
 const puppeteerConfig = {
@@ -128,7 +137,6 @@ client.on('ready', () => {
 
 client.on('auth_failure', (msg) => {
   console.error('[KOOP Bot] Authentication failure — check session or re-scan QR:', msg);
-  // Give the logger time to flush before exiting
   setTimeout(() => process.exit(1), 500);
 });
 
@@ -144,6 +152,12 @@ client.on('message', async (message) => {
   const sender = message.from;
   const body   = (message.body || '').trim();
 
+  // 1. Check concluding/politeness keywords FIRST
+  if (isConcludingMessage(body)) {
+    await message.reply(POLITE_EXIT_REPLY);
+    return;
+  }
+
   // Option 6 flow: user previously selected "Message particulier" — capture their free-form message
   if (awaitingMessage.has(sender)) {
     awaitingMessage.delete(sender);
@@ -153,8 +167,8 @@ client.on('message', async (message) => {
     return;
   }
 
-  // Known menu option selected
-  if (MENU_RESPONSES[body]) {
+  // 2. Check if it's a menu number (1-6)
+  if (['1', '2', '3', '4', '5', '6'].includes(body)) {
     await message.reply(MENU_RESPONSES[body]);
     if (body === '6') {
       awaitingMessage.add(sender);
@@ -162,13 +176,13 @@ client.on('message', async (message) => {
     return;
   }
 
-  // Any unrecognised input → show main menu
+  // 3. Fallback: send the full menu directly
   await message.reply(MAIN_MENU);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOOT SEQUENCE — initialize the WhatsApp client (after the HTTP server)
-// ──────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('[KOOP Bot] Initializing WhatsApp client...');
 client.initialize().catch((err) => {
   console.error('[KOOP Bot] client.initialize() threw an error:', err);
